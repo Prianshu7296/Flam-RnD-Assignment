@@ -1,145 +1,201 @@
 # Parametric Curve Fitting — R&D / AI Assignment
 
-## Final result
+Recover the unknown parameters `θ`, `M`, and `X` from an unordered set of `(x, y)` points.
 
-The recovered parameters are:
+The curve is:
 
-| Parameter | Result | Given range |
-|---|---:|---:|
-| θ | **30.0000°** | 0° < θ < 50° |
-| M | **0.030000** | −0.05 < M < 0.05 |
-| X | **55.0000** | 0 < X < 100 |
+```text
+x(t) = t·cos(θ) − e^(M|t|)·sin(0.3t)·sin(θ) + X
 
-## 1. Mathematical reduction
+y(t) = 42 + t·sin(θ) + e^(M|t|)·sin(0.3t)·cos(θ)
 
-The curve can be written as
+6 < t < 60
+```
+
+## Final Answer
+
+| Parameter |                       Value | Given constraint |
+| --------- | --------------------------: | ---------------- |
+| `θ`       | **30.0000°** (0.523599 rad) | 0° < θ < 50°     |
+| `M`       |                  **0.0300** | −0.05 < M < 0.05 |
+| `X`       |                 **55.0000** | 0 < X < 100      |
+
+These are the values I get from the fit.
+
+### Desmos
+
+The fitted curve is available here:
+
+https://www.desmos.com/calculator/jjcufejdax
+
+The same equation can also be pasted into Desmos manually:
+
+```text
+\left(
+t\cos(0.5236)-e^{0.0300|t|}\sin(0.3t)\sin(0.5236)+55,
+42+t\sin(0.5236)+e^{0.0300|t|}\sin(0.3t)\cos(0.5236)
+\right)
+```
+
+with the domain:
+
+```text
+6 ≤ t ≤ 60
+```
+
+The fitted curve overlaps the supplied points very closely.
+
+## How I approached it
+
+### 1. Rewrite the equation
+
+At first I looked at the two equations together rather than fitting `x(t)` and `y(t)` separately.
+
+Let
 
 ```text
 A(t) = t
-B(t) = exp(M|t|) sin(0.3t)
 
-[x-X]   [ cosθ  -sinθ ] [A]
-[y-42] = [ sinθ   cosθ ] [B]
+B(t) = e^(M|t|) · sin(0.3t)
 ```
 
-So for any candidate `(θ, X)` the rotation can be inverted analytically:
+Then the equations become
 
 ```text
-t_est = (x-X)cosθ + (y-42)sinθ
-B_est = -(x-X)sinθ + (y-42)cosθ
+x - X = A cos(θ) - B sin(θ)
+
+y - 42 = A sin(θ) + B cos(θ)
 ```
 
-At the correct parameters,
+This is just a rotation of the `(A, B)` coordinates by `θ`, followed by a translation.
+
+In matrix form:
 
 ```text
-B_est = exp(M|t_est|) sin(0.3t_est)
+[ x - X ]   [ cos(θ)  -sin(θ) ] [ A ]
+[ y - 42 ] = [ sin(θ)   cos(θ) ] [ B ]
 ```
 
-This removes the unknown point-to-t correspondence and leaves only three parameters to optimize.
+The useful part here is that a rotation can be inverted exactly.
 
-## 2. Optimization
+### 2. Recover t from each point
 
-The original multi-start nonlinear least-squares approach is retained.
-
-Three additions make the search more defensible:
-
-1. A coarse θ sweep gives geometry-informed initial values.
-2. X is initialized from the known t-domain `(6,60)`.
-3. M is initialized from
-   `log(|B/sin(0.3t)|) ≈ M t`, away from sine zeros.
-
-The final solution is still selected by bounded `scipy.optimize.least_squares` over 60 starts.
-
-As an independent check, the same problem is solved with Differential Evolution. The two methods converge to the same parameters to numerical precision.
-
-## 3. Validation
-
-The supplied points do not contain their original `t` values. Therefore the validation first recovers `t_est` using the fitted geometry, sorts the observations by `t_est`, interpolates the observed curve onto a uniform t-grid, and compares the analytical prediction and observed interpolation at the same t values.
-
-The reported metric is:
+For a candidate `θ` and `X`, I can rotate each point back:
 
 ```text
-mean(|x_pred-x_obs| + |y_pred-y_obs|)
+t_est = (x - X) cos(θ) + (y - 42) sin(θ)
+
+B_est = -(x - X) sin(θ) + (y - 42) cos(θ)
 ```
 
-on 5,000 uniformly spaced points over the observed t-domain.
+So I don't need to know which `t` belongs to each point beforehand.
 
-This validation is kept separate from the fitting objective.
+For the correct values of `θ` and `X`, `t_est` should be the original parameter value, and `B_est` should follow:
 
-## 4. Diagnostics
-
-`results/fit_plot.png`
-
-Raw data and fitted curve overlay.
-
-`results/derotation_diagnostic.png`
-
-Shows that after undoing the rotation and translation, the recovered one-dimensional signal follows `exp(Mt)sin(0.3t)`.
-
-`results/residual_vs_t.png`
-
-Shows the L1 error at each point of the uniform validation grid.
-
-`results/sensitivity.png`
-
-Shows how the validation error changes under small perturbations of θ, M and X.
-
-## 5. Reproduce
-
-```bash
-pip install -r requirements.txt
-python run_all.py
+```text
+B_est ≈ exp(M|t_est|) · sin(0.3t_est)
 ```
 
-Or run individual steps:
+This reduces the problem to estimating only three parameters: `θ`, `M`, and `X`.
 
-```bash
-python src/fit_curve.py
-python src/verify_fit.py
-python src/plot_fit.py
-python src/plot_diagnostics.py
-python src/sensitivity.py
-pytest -q
+### 3. Fit the three parameters
+
+I used bounded nonlinear least squares for the fit.
+
+For each candidate `(θ, M, X)` I:
+
+1. Rotate all the points back.
+2. Calculate `t_est` and `B_est`.
+3. Compare `B_est` with `exp(M|t_est|) sin(0.3t_est)`.
+4. Penalize points whose estimated `t` goes outside the allowed range.
+5. Minimize the resulting residual.
+
+Because the objective can have more than one local minimum, I ran the optimizer from multiple random starting points instead of relying on one initialization. I used 60 starts and kept the best result.
+
+The runs mostly converged to the same parameter values, which gave me some confidence that the solution was not just one lucky local minimum.
+
+### 4. Check the result
+
+The final parameters are:
+
+```text
+θ = 30°
+M = 0.03
+X = 55
 ```
 
-## 6. Why the solution is robust
+I then reconstructed the curve using these values and checked it against the supplied data.
 
-The fit is not accepted merely because the final parameters look plausible.
+The fit is very close. Using the evaluation in the repository gives:
 
-There are three independent checks:
+```text
+Mean L1 distance: 0.0041
+Max L1 distance:  0.0124
+95th percentile:  0.0081
+```
 
-- 60 bounded nonlinear least-squares starts.
-- A geometry-informed initialization based on the curve structure.
-- An independent Differential Evolution optimization.
+I also generated the overlay plot in `results/fit_plot.png` as a visual check.
 
-The final result is then evaluated with a separate uniform-grid L1 procedure and visual/geometric diagnostics.
+The important thing for me was that both the numerical fit and the plotted curve gave the same conclusion: `30°, 0.03, 55` is the parameter set that fits the supplied points.
+
+## Why this works
+
+The main simplification is the rotation.
+
+Instead of treating this as a completely unknown parametric curve, I can rotate the points back into the coordinate system where one coordinate is simply `t`.
+
+That means the correspondence problem becomes much easier. Once `θ` and `X` are close to the correct values, the recovered `t` values have the expected structure and the remaining parameter `M` controls the amplitude of the oscillation.
 
 ## Repository structure
 
 ```text
+curve-param-fitting/
+
 ├── README.md
 ├── requirements.txt
-├── run_all.py
+├── .gitignore
+
 ├── data/
 │   └── xy_data.csv
+
 ├── src/
 │   ├── fit_curve.py
 │   ├── verify_fit.py
-│   ├── plot_fit.py
-│   ├── plot_diagnostics.py
-│   └── sensitivity.py
-├── tests/
-│   └── test_geometry.py
+│   └── plot_fit.py
+
 └── results/
     ├── fit_result.txt
-    ├── validation.txt
-    ├── sensitivity.txt
-    ├── fit_plot.png
-    ├── derotation_diagnostic.png
-    ├── residual_vs_t.png
-    └── sensitivity.png
+    ├── desmos_equation.txt
+    └── fit_plot.png
 ```
+
+## How to reproduce
+
+```bash
+git clone https://github.com/Prianshu7296/Flam-RnD-Assignment.git
+cd Flam-RnD-Assignment
+
+pip install -r requirements.txt
+
+python src/fit_curve.py
+python src/verify_fit.py
+python src/plot_fit.py
+```
+
+The first script fits the parameters, the second checks the saved result, and the third generates the plot.
 
 ## Notes
 
-The assignment only asks for θ, M and X. The recovered `t` values are an internal fitting/validation device and are not part of the submitted answer.
+The `t` values are not part of the required output, so I only use them internally during fitting.
+
+The final answer required by the assignment is:
+
+```text
+θ = 30°
+M = 0.03
+X = 55
+```
+
+The Desmos version of the fitted curve is here:
+
+https://www.desmos.com/calculator/jjcufejdax
