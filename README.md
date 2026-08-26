@@ -1,188 +1,201 @@
 # Parametric Curve Fitting — R&D / AI Assignment
 
-Recovering the unknown parameters `θ, M, X` of a parametric curve from a
-noisy, unordered cloud of `(x, y)` points.
+Recover the unknown parameters `θ`, `M`, and `X` from an unordered set of `(x, y)` points.
 
-```
+The curve is:
+
+```text
 x(t) = t·cos(θ) − e^(M|t|)·sin(0.3t)·sin(θ) + X
-y(t) = 42 + t·sin(θ) + e^(M|t|)·sin(0.3t)·cos(θ)          for  6 < t < 60
+
+y(t) = 42 + t·sin(θ) + e^(M|t|)·sin(0.3t)·cos(θ)
+
+6 < t < 60
 ```
 
 ## Final Answer
 
-| Parameter | Value            | Constraint given     |
-|-----------|------------------|-----------------------|
-| `θ`       | **30.0000°** (0.523599 rad) | 0° < θ < 50°   |
-| `M`       | **0.0300**        | −0.05 < M < 0.05     |
-| `X`       | **55.0000**       | 0 < X < 100          |
+| Parameter |                       Value | Given constraint |
+| --------- | --------------------------: | ---------------- |
+| `θ`       | **30.0000°** (0.523599 rad) | 0° < θ < 50°     |
+| `M`       |                  **0.0300** | −0.05 < M < 0.05 |
+| `X`       |                 **55.0000** | 0 < X < 100      |
 
-**Desmos-ready LaTeX (parametric):**
+These are the values I get from the fit.
 
+### Desmos
+
+The fitted curve is available here:
+
+https://www.desmos.com/calculator/jjcufejdax
+
+The same equation can also be pasted into Desmos manually:
+
+```text
+\left(
+t\cos(0.5236)-e^{0.0300|t|}\sin(0.3t)\sin(0.5236)+55,
+42+t\sin(0.5236)+e^{0.0300|t|}\sin(0.3t)\cos(0.5236)
+\right)
 ```
-\left(t*\cos(0.5236)-e^{0.0300\left|t\right|}\cdot\sin(0.3t)\sin(0.5236)+55.0000,42+t*\sin(0.5236)+e^{0.0300\left|t\right|}\cdot\sin(0.3t)\cos(0.5236)\right)
+
+with the domain:
+
+```text
+6 ≤ t ≤ 60
 ```
 
-with domain `6 ≤ t ≤ 60`. Paste this into
-[desmos.com/calculator](https://www.desmos.com/calculator), add the domain
-restriction the same way the assignment's example graph does, and you'll
-see the red fitted curve sit exactly on top of `data/xy_data.csv` plotted
-as a table — see `results/fit_plot.png` for the equivalent check done in
-Python.
+The fitted curve overlaps the supplied points very closely.
 
-**Fit quality** (uniformly-sampled-point L1 distance, the metric named in
-the assessment criteria): mean L1 = **0.0041**, max L1 = **0.0124**,
-95th‑percentile L1 = **0.0081** — i.e. the residual is essentially just
-floating point / CSV-rounding noise, not model error.
+## How I approached it
 
-![fit](results/fit_plot.png)
+### 1. Rewrite the equation
 
----
+At first I looked at the two equations together rather than fitting `x(t)` and `y(t)` separately.
 
-## Approach / Thought Process
+Let
 
-### 1. Understand the structure of the equations first
-
-The two equations mix a **linear-in-t term** and an **oscillating term**
-in a way that looks intimidating at first, but it is actually just a
-**2D rotation**. Define:
-
-```
+```text
 A(t) = t
+
 B(t) = e^(M|t|) · sin(0.3t)
 ```
 
-Then:
+Then the equations become
 
-```
-x = A·cos(θ) − B·sin(θ) + X
-y = 42 + A·sin(θ) + B·cos(θ)
-```
+```text
+x - X = A cos(θ) - B sin(θ)
 
-which is precisely:
-
-```
-[ x − X  ]   [ cos θ   −sin θ ] [ A ]
-[ y − 42 ] = [ sin θ    cos θ ] [ B ]
+y - 42 = A sin(θ) + B cos(θ)
 ```
 
-i.e. `(A, B)` rotated by `θ` and translated by `(X, 42)` gives `(x, y)`.
-**42 is already given** in the equation, so the only unknown offset is `X`.
+This is just a rotation of the `(A, B)` coordinates by `θ`, followed by a translation.
 
-### 2. The key trick: invert the rotation to recover `t` per point, without correspondence
+In matrix form:
 
-Normally, fitting a parametric curve to an unordered point cloud is hard
-because you don't know which `t` produced which `(x, y)`. But because the
-map from `(A, B)` to `(x, y)` is an (invertible) **rotation + translation**,
-we can invert it analytically for *any candidate* `(θ, X)`:
-
-```
-t_est = (x − X)·cos θ + (y − 42)·sin θ
-B_est = −(x − X)·sin θ + (y − 42)·cos θ
+```text
+[ x - X ]   [ cos(θ)  -sin(θ) ] [ A ]
+[ y - 42 ] = [ sin(θ)   cos(θ) ] [ B ]
 ```
 
-If `(θ, X)` are the true values, `t_est` recovers the true `t` for that
-point (up to numerical noise), and `B_est` recovers `e^(M|t|)·sin(0.3t)`.
+The useful part here is that a rotation can be inverted exactly.
 
-This turns "fit a curve to 1500 unordered points" into an ordinary
-**3-parameter nonlinear least squares problem**: for candidate `(θ, M, X)`,
-compute `t_est` and `B_est` for every point, and check how well
+### 2. Recover t from each point
 
+For a candidate `θ` and `X`, I can rotate each point back:
+
+```text
+t_est = (x - X) cos(θ) + (y - 42) sin(θ)
+
+B_est = -(x - X) sin(θ) + (y - 42) cos(θ)
 ```
-B_est  ≈  exp(M·|t_est|) · sin(0.3·t_est)
+
+So I don't need to know which `t` belongs to each point beforehand.
+
+For the correct values of `θ` and `X`, `t_est` should be the original parameter value, and `B_est` should follow:
+
+```text
+B_est ≈ exp(M|t_est|) · sin(0.3t_est)
 ```
 
-holds. Sum the squared residual across all 1500 points — that's the
-objective function minimized by `scipy.optimize.least_squares`.
+This reduces the problem to estimating only three parameters: `θ`, `M`, and `X`.
 
-A soft penalty term is added so that `t_est` is pushed back inside the
-valid domain `(6, 60)` if a candidate parameter set would place it outside
-(keeps the optimizer from wandering into unphysical regions).
+### 3. Fit the three parameters
 
-### 3. Avoiding local minima
+I used bounded nonlinear least squares for the fit.
 
-`sin(0.3t)` is periodic and `θ` is bounded but the residual surface can
-still have local minima (e.g. a slightly-off `θ` can be partially
-compensated by `M` and `X` over a short arc of the data). To avoid getting
-stuck, the optimizer is run from **60 random starts** drawn uniformly from
-the allowed ranges of `θ, M, X`, each refined with a bounded
-Trust-Region-Reflective least-squares solve, and the run with the lowest
-final cost is kept. In practice the fit converges to essentially the same
-global optimum (cost ≈ 0) from the large majority of starting points,
-which is a strong indicator this is the true global minimum rather than a
-local one.
+For each candidate `(θ, M, X)` I:
 
-### 4. Validation
+1. Rotate all the points back.
+2. Calculate `t_est` and `B_est`.
+3. Compare `B_est` with `exp(M|t_est|) sin(0.3t_est)`.
+4. Penalize points whose estimated `t` goes outside the allowed range.
+5. Minimize the resulting residual.
 
-`src/verify_fit.py` independently reconstructs the curve from the saved
-parameters and computes the L1 distance metric described in the
-assignment's assessment criteria (uniformly sampled points on the fitted
-curve vs. the nearest real data point). `src/plot_fit.py` overlays the
-fitted curve on the raw scatter for a visual sanity check
-(`results/fit_plot.png`).
+Because the objective can have more than one local minimum, I ran the optimizer from multiple random starting points instead of relying on one initialization. I used 60 starts and kept the best result.
 
-The recovered values — `θ = 30°`, `M = 0.03`, `X = 55` — are also
-suspiciously "round" numbers well inside the given bounds, which is a
-good sign the underlying ground truth was generated with exactly these
-values and the fit found it correctly (rather than an arbitrary,
-overfit combination).
+The runs mostly converged to the same parameter values, which gave me some confidence that the solution was not just one lucky local minimum.
 
----
+### 4. Check the result
 
-## Repository Structure
+The final parameters are:
 
+```text
+θ = 30°
+M = 0.03
+X = 55
 ```
+
+I then reconstructed the curve using these values and checked it against the supplied data.
+
+The fit is very close. Using the evaluation in the repository gives:
+
+```text
+Mean L1 distance: 0.0041
+Max L1 distance:  0.0124
+95th percentile:  0.0081
+```
+
+I also generated the overlay plot in `results/fit_plot.png` as a visual check.
+
+The important thing for me was that both the numerical fit and the plotted curve gave the same conclusion: `30°, 0.03, 55` is the parameter set that fits the supplied points.
+
+## Why this works
+
+The main simplification is the rotation.
+
+Instead of treating this as a completely unknown parametric curve, I can rotate the points back into the coordinate system where one coordinate is simply `t`.
+
+That means the correspondence problem becomes much easier. Once `θ` and `X` are close to the correct values, the recovered `t` values have the expected structure and the remaining parameter `M` controls the amplitude of the oscillation.
+
+## Repository structure
+
+```text
 curve-param-fitting/
-├── README.md                  <- this file (approach, results, how to run)
-├── requirements.txt           <- Python dependencies
+
+├── README.md
+├── requirements.txt
 ├── .gitignore
+
 ├── data/
-│   └── xy_data.csv            <- provided data (1500 x,y points)
+│   └── xy_data.csv
+
 ├── src/
-│   ├── fit_curve.py           <- main script: multi-start nonlinear least squares fit
-│   ├── verify_fit.py          <- reloads results and recomputes the L1 metric
-│   └── plot_fit.py            <- generates results/fit_plot.png
+│   ├── fit_curve.py
+│   ├── verify_fit.py
+│   └── plot_fit.py
+
 └── results/
-    ├── fit_result.txt         <- saved theta / M / X + L1 error summary
-    ├── desmos_equation.txt    <- ready-to-paste Desmos LaTeX string
-    └── fit_plot.png           <- data vs. fitted curve overlay
+    ├── fit_result.txt
+    ├── desmos_equation.txt
+    └── fit_plot.png
 ```
 
-## How to Reproduce
+## How to reproduce
 
 ```bash
-git clone <this-repo>
-cd curve-param-fitting
+git clone https://github.com/Prianshu7296/Flam-RnD-Assignment.git
+cd Flam-RnD-Assignment
+
 pip install -r requirements.txt
 
-python src/fit_curve.py     # runs the multi-start fit, writes results/
-python src/verify_fit.py    # independently re-checks the L1 error
-python src/plot_fit.py      # regenerates results/fit_plot.png
+python src/fit_curve.py
+python src/verify_fit.py
+python src/plot_fit.py
 ```
 
-## Desmos Graph
+The first script fits the parameters, the second checks the saved result, and the third generates the plot.
 
-Equation string (also saved at `results/desmos_equation.txt`):
+## Notes
 
+The `t` values are not part of the required output, so I only use them internally during fitting.
+
+The final answer required by the assignment is:
+
+```text
+θ = 30°
+M = 0.03
+X = 55
 ```
-\left(t*\cos(0.5236)-e^{0.0300\left|t\right|}\cdot\sin(0.3t)\sin(0.5236)+55.0000,42+t*\sin(0.5236)+e^{0.0300\left|t\right|}\cdot\sin(0.3t)\cos(0.5236)\right)
-```
 
-Steps to view it yourself:
-1. Go to [desmos.com/calculator](https://www.desmos.com/calculator).
-2. Paste the LaTeX string above into a new expression line.
-3. Set the domain to `6 ≤ t ≤ 60` (click the small gear/domain field that
-   appears next to the parametric expression).
-4. Optionally, paste `data/xy_data.csv` into a Desmos table to overlay the
-   raw points and confirm the curve passes through them, exactly like the
-   local `results/fit_plot.png` shows.
+The Desmos version of the fitted curve is here:
 
-## Notes / Limitations
-
-- The fit assumes the data is exact samples of the curve plus only tiny
-  numerical noise (confirmed by the ~0.01 mean L1 residual, several
-  orders of magnitude below the scale of the curve itself, which spans
-  ~50 units in both x and y).
-- `t` values themselves are not part of the requested answer, so they are
-  only used internally as a fitting device (via the derotation trick) and
-  are not reported, per the assignment's required output of `θ, M, X`
-  only.
+https://www.desmos.com/calculator/jjcufejdax
