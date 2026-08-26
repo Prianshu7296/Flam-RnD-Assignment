@@ -1,49 +1,46 @@
 # Parametric Curve Fitting — R&D Assignment
 
-Recover the unknown parameters \(\theta\), \(M\), and \(X\) from an unordered set of \((x,y)\) points.
+Recover the unknown parameters `theta`, `M`, and `X` from an unordered set of `(x, y)` points.
 
-The curve is defined by
+The curve is defined by the parametric equations:
 
-$$
-\begin{aligned}
-x(t) &= t\cos\theta
-      - e^{M|t|}\sin(0.3t)\sin\theta + X \\
-y(t) &= 42 + t\sin\theta
-      + e^{M|t|}\sin(0.3t)\cos\theta
-\end{aligned}
-$$
+```text
+x(t) = t*cos(theta) - exp(M*|t|)*sin(0.3*t)*sin(theta) + X
 
-with
+y(t) = 42 + t*sin(theta) + exp(M*|t|)*sin(0.3*t)*cos(theta)
+```
 
-$$
-6 < t < 60.
-$$
+with domain:
+
+```text
+6 < t < 60
+```
 
 ## Search Bounds
 
-| Parameter  | Range                           |
-| ---------- | ------------------------------- |
-| \(\theta\) | \(0^\circ < \theta < 50^\circ\) |
-| \(M\)      | \(-0.05 < M < 0.05\)            |
-| \(X\)      | \(0 < X < 100\)                 |
+| Parameter | Range              |
+| --------- | ------------------ |
+| `theta`   | `0° < theta < 50°` |
+| `M`       | `-0.05 < M < 0.05` |
+| `X`       | `0 < X < 100`      |
 
 ---
 
 # Final Answer
 
-| Parameter  | Recovered Value |
-| ---------- | --------------: |
-| \(\theta\) |    **30.0000°** |
-| \(M\)      |      **0.0300** |
-| \(X\)      |     **55.0000** |
+| Parameter | Recovered Value |
+| --------- | --------------: |
+| `theta`   |    **30.0000°** |
+| `M`       |      **0.0300** |
+| `X`       |     **55.0000** |
 
 Equivalent angle in radians:
 
-$$
-\theta \approx 0.523599\text{ rad}
-$$
+```text
+theta = 0.523599 rad
+```
 
-The recovered parameters lie comfortably inside the allowed search bounds.
+The recovered parameters are well inside the allowed search bounds.
 
 ## Desmos
 
@@ -59,208 +56,189 @@ Copy-paste ready equation:
 
 # 1. Key Mathematical Insight
 
-The main difficulty is that the supplied \((x,y)\) points are unordered and the corresponding values of \(t\) are unknown.
+The main challenge is that the supplied `(x, y)` points are unordered and their corresponding values of `t` are unknown.
 
-A direct approach would introduce one additional unknown \(t_i\) for every observed point. That would turn the problem into a very high-dimensional nonlinear optimization problem.
+A naive approach would introduce one unknown `t_i` for every observed point. With 1,500 points, this would create a very high-dimensional optimization problem.
 
 Instead, the structure of the curve can be exploited analytically.
 
-Define
+Define:
 
-$$
-A(t)=t
-$$
+```text
+A(t) = t
+
+B(t) = exp(M*|t|) * sin(0.3*t)
+```
+
+The curve can then be written as a rotation followed by a translation:
+
+```text
+[x - X]   [ cos(theta)  -sin(theta) ] [ A(t) ]
+[y - 42] =[ sin(theta)   cos(theta) ] [ B(t) ]
+```
+
+Because the rotation matrix is orthogonal, its inverse is simply its transpose.
+
+Therefore, for any candidate `theta` and `X`:
+
+```text
+t_est =
+(x - X)*cos(theta)
++
+(y - 42)*sin(theta)
+```
 
 and
 
-$$
-B(t)=e^{M|t|}\sin(0.3t).
-$$
+```text
+B_est =
+-(x - X)*sin(theta)
++
+(y - 42)*cos(theta)
+```
 
-Then the curve becomes
+For the correct parameters:
 
-$$
-\begin{pmatrix}
-x-X\\
-y-42
-\end{pmatrix}
-=
-\begin{pmatrix}
-\cos\theta & -\sin\theta\\
-\sin\theta & \cos\theta
-\end{pmatrix}
-\begin{pmatrix}
-A(t)\\
-B(t)
-\end{pmatrix}.
-$$
+```text
+B_est ≈ exp(M*|t_est|) * sin(0.3*t_est)
+```
 
-Therefore, the observed curve is simply the base curve
+This is the key simplification.
 
-$$
-\left(t,\ e^{M|t|}\sin(0.3t)\right)
-$$
+Instead of optimizing thousands of unknown `t_i` values, the problem is reduced to only three unknown parameters:
 
-after a rotation by \(\theta\) and a translation by \((X,42)\).
+```text
+theta, M, X
+```
 
-The important consequence is that the rotation can be inverted analytically.
+This makes the fitting problem substantially lower-dimensional and easier to optimize robustly.
 
 ---
 
-# 2. Inverse Rotation
+# 2. Why the Inverse Rotation Works
 
-Because a rotation matrix is orthogonal, its inverse is its transpose.
+The original curve is a simple base curve:
 
-For any candidate \((\theta,X)\),
+```text
+(t, exp(M*|t|) * sin(0.3*t))
+```
 
-$$
-t_{\text{est}}
-=
-(x-X)\cos\theta+(y-42)\sin\theta
-$$
+which is then:
 
-and
+1. Rotated by `theta`
+2. Translated by `(X, 42)`
 
-$$
-B_{\text{est}}
-=
--(x-X)\sin\theta+(y-42)\cos\theta.
-$$
+Undoing the translation and rotation recovers the coordinates in the original curve frame.
 
-For the correct parameters, the transformed point should satisfy
+In that frame, the first coordinate is directly equal to `t`.
 
-$$
-B_{\text{est}}
-\approx
-e^{M|t_{\text{est}}|}
-\sin(0.3t_{\text{est}}).
-$$
+Therefore:
 
-This removes the need to explicitly search for point-to-curve correspondences.
+```text
+t_est = transformed x-coordinate
+```
 
-The original unordered 2-D fitting problem is therefore reduced to a bounded optimization problem involving only three unknowns:
+and the second transformed coordinate can be compared directly with the exponential-sine model.
 
-$$
-\boxed{(\theta,M,X)}
-$$
-
-This reduction is the main mathematical idea used in the solution.
+This avoids explicit point-to-curve correspondence search during optimization.
 
 ---
 
 # 3. Optimization Strategy
 
-For each candidate parameter vector
-
-$$
-(\theta,M,X)
-$$
-
-the implementation performs the following steps:
-
-1. Apply the inverse rotation to every observed point.
-2. Recover an estimated \(t\) value and transformed oscillation value \(B\).
-3. Evaluate the model
-
-$$
-B_{\text{model}}
-=
-e^{M|t_{\text{est}}|}
-\sin(0.3t_{\text{est}}).
-$$
-
-4. Compute the transformed-coordinate residual
-
-$$
-r =
-B_{\text{est}}-B_{\text{model}}.
-$$
-
-5. Penalize recovered \(t\) values outside the allowed domain \(6<t<60\).
-6. Optimize the resulting residual vector using bounded nonlinear least squares.
-
-The implementation uses **60 independent random initializations** with a fixed random seed. Each initialization is optimized using SciPy's Trust Region Reflective (`trf`) least-squares solver.
-
-Using multiple starting points reduces dependence on the initial guess and provides a practical check that the optimization is repeatedly reaching the same basin.
-
-The best solution converges to:
+The optimization is performed in only three variables:
 
 ```text
-theta = 30.0000 degrees
-M     = 0.0300
-X     = 55.0000
+(theta, M, X)
+```
+
+For each candidate parameter set, the implementation:
+
+1. Applies the inverse rotation to every observed point.
+2. Recovers `t_est` and `B_est`.
+3. Evaluates the model
+
+```text
+B_model = exp(M*|t_est|) * sin(0.3*t_est)
+```
+
+4. Computes the transformed residual
+
+```text
+residual = B_est - B_model
+```
+
+5. Applies soft penalties when recovered `t` values move outside the allowed interval.
+6. Optimizes the residual using bounded nonlinear least squares.
+
+The implementation uses 60 independent random initializations with a fixed random seed.
+
+Each initialization uses SciPy's Trust Region Reflective (`trf`) least-squares solver.
+
+The purpose of the multi-start procedure is to reduce sensitivity to the initial guess and check whether different starting points consistently converge to the same parameter region.
+
+All successful runs converge to the same solution basin:
+
+```text
+theta ≈ 30°
+M     ≈ 0.03
+X     ≈ 55
 ```
 
 ---
 
-# 4. Why the Optimization Works
+# 4. Optimization Results
 
-The sinusoidal component is nonlinear in \(t\), but the inverse rotation gives a direct estimate of \(t\) for every candidate \((\theta,X)\).
-
-That means the implementation does **not** optimize thousands of independent \(t_i\) values.
-
-Instead, every observed point is transformed analytically, and the only variables being optimized are:
+The final recovered parameters are:
 
 ```text
-theta
-M
-X
+theta = 30.0000°
+M     = 0.0300
+X     = 55.0000
 ```
 
-This reduces the dimensionality dramatically and makes the problem much easier to solve robustly.
-
-The fitted solution is also checked across many different initial parameter guesses rather than relying on a single optimizer run.
+The repeated convergence across many initializations provides an additional consistency check on the solution.
 
 ---
 
 # 5. Validation
 
-The fitting objective and the final validation are intentionally separated.
+The optimization residual and the final validation metric are treated separately.
 
-The optimizer works in the transformed coordinate system because this provides a simple differentiable residual for recovering the parameters.
+The optimizer works in the transformed coordinate system because the inverse rotation provides a simple residual for estimating the parameters.
 
-The final validation instead measures the geometric reconstruction error between the observed data and the fitted parametric curve.
+The final validation is performed directly against the reconstructed parametric curve.
 
 ## Validation procedure
 
-The fitted curve is uniformly sampled over
-
-$$
-6 \leq t \leq 60
-$$
-
-using 5,000 points.
-
-For every observed point \((x_i,y_i)\), the implementation computes its L1 distance to the closest sampled point on the fitted curve:
-
-$$
-d_i
-=
-\min_t
-\left(
-|x(t)-x_i|
-+
-|y(t)-y_i|
-\right).
-$$
-
-The reported metrics are then computed over all supplied data points.
-
-This gives a dense numerical approximation to the point-to-curve L1 reconstruction error.
-
-The validation is implemented independently in:
+The fitted curve is sampled densely over the allowed domain:
 
 ```text
-src/verify_fit.py
+6 <= t <= 60
 ```
 
-and therefore does not depend on the optimizer's internal residual.
+using 5,000 uniformly spaced values of `t`.
+
+For every observed point `(x_i, y_i)`, the implementation computes the minimum L1 distance to the sampled fitted curve:
+
+```text
+d_i =
+min(
+    |x(t) - x_i| + |y(t) - y_i|
+)
+```
+
+over all sampled curve points.
+
+The final reported metrics are computed from these point-to-curve distances.
+
+This provides a dense numerical approximation of the reconstruction error using the L1 distance specified by the assignment.
 
 ---
 
 # 6. Validation Results
 
-Results on the supplied **1,500-point dataset**:
+Results on the supplied 1,500-point dataset:
 
 | Metric              |            Value |
 | ------------------- | ---------------: |
@@ -268,15 +246,15 @@ Results on the supplied **1,500-point dataset**:
 | 95th percentile L1  | **0.0005913611** |
 | Maximum L1 distance | **0.0090396116** |
 
-The mean reconstruction error is approximately
+The mean error is approximately:
 
-$$
-1.745\times10^{-4}.
-$$
+```text
+1.745 × 10^-4
+```
 
-The fitted curve therefore stays very close to the supplied point cloud across the full parameter range.
+The small mean error indicates that the recovered parameters reproduce the supplied curve closely.
 
-The maximum error is larger than the mean, which is expected when evaluating a dense oscillatory curve against a finite set of sampled points.
+The maximum error is larger than the mean because the validation compares a finite set of observed points against a discretely sampled representation of the fitted curve.
 
 ---
 
@@ -288,27 +266,27 @@ The supplied data points are shown together with the reconstructed parametric cu
 
 ![Observed points and fitted parametric curve](results/fit_plot.png)
 
-The fitted curve follows the observed oscillatory trajectory across the full domain.
+The fitted curve closely follows the observed oscillatory trajectory across the full domain.
 
 ---
 
-## L1 Residual
+## L1 Residual versus t
 
 The residual plot shows how reconstruction error varies across the curve.
 
 ![L1 residual versus t](results/residual_vs_t.png)
 
-This provides a more useful diagnostic than the fitted-curve plot alone because it shows where the model deviates most strongly from the supplied data.
+This helps identify regions where the fitted model differs most from the observed data.
 
 ---
 
-## Parameter Sensitivity
+## Local Parameter Sensitivity
 
-The sensitivity plot shows the local effect of perturbing the recovered parameters.
+The sensitivity plot shows how the fitted solution changes under local parameter perturbations.
 
-![Parameter sensitivity](results/sensitivity.png)
+![Local parameter sensitivity](results/sensitivity.png)
 
-This provides an additional check that the reported solution is not simply an arbitrary point in parameter space.
+This provides an additional check on the stability of the recovered solution.
 
 ---
 
@@ -333,13 +311,7 @@ Run the fitting procedure:
 python src/fit_curve.py
 ```
 
-This performs the multi-start nonlinear least-squares search and writes the recovered parameters to:
-
-```text
-results/fit_result.txt
-```
-
-Run the independent validation:
+Run validation:
 
 ```bash
 python src/verify_fit.py
@@ -380,7 +352,51 @@ Flam-RnD-Assignment/
 
 ---
 
-# 10. Final Result
+# 10. Reproducibility and Design Choices
+
+A few design choices are intentional:
+
+### Analytical parameter reduction
+
+The inverse-rotation transformation avoids introducing one separate `t_i` variable for every data point.
+
+### Multi-start optimisation
+
+Multiple initializations reduce dependence on a single starting point and make the optimization more robust to local minima.
+
+### Fixed random seed
+
+The initialization procedure is reproducible.
+
+### Separate validation
+
+The optimization residual is not used as the only measure of final fit quality. The fitted curve is evaluated separately using a dense point-to-curve L1 calculation.
+
+---
+
+# 11. Final Recovered Curve
+
+The final recovered curve is:
+
+```text
+x(t) = t*cos(30°)
+       - exp(0.03*|t|)*sin(0.3*t)*sin(30°)
+       + 55
+
+y(t) = 42
+       + t*sin(30°)
+       + exp(0.03*|t|)*sin(0.3*t)*cos(30°)
+```
+
+for:
+
+```text
+6 < t < 60
+```
+
+---
+
+# Conclusion
 
 The recovered parameters are:
 
@@ -390,43 +406,17 @@ M     = 0.03
 X     = 55
 ```
 
-Therefore the recovered curve is
+The main contribution of the approach is the analytical inverse-rotation step.
 
-$$
-\boxed{
-\begin{aligned}
-x(t) &= t\cos(30^\circ)
-- e^{0.03|t|}\sin(0.3t)\sin(30^\circ)
-+55\\
-y(t) &= 42+t\sin(30^\circ)
-+e^{0.03|t|}\sin(0.3t)\cos(30^\circ)
-\end{aligned}}
-$$
+It transforms the unordered point-cloud problem into a three-parameter nonlinear optimization problem without explicitly optimizing the unknown `t` value for every data point.
 
-for
+The final fitted curve closely reproduces the supplied 1,500-point dataset, with a mean L1 reconstruction error of approximately:
 
-$$
-6<t<60.
-$$
+```text
+1.745 × 10^-4
+```
 
----
+This combination of analytical reduction, multi-start optimization, and independent curve-level validation provides a compact and reproducible solution to the assignment.
 
-# Conclusion
-
-The solution uses the geometric structure of the parametric equation rather than treating the problem as a generic black-box curve fit.
-
-The key step is the analytical inverse rotation, which removes the unknown point-to-\(t\) correspondence and reduces the problem to a three-parameter nonlinear optimization.
-
-The final parameters
-
-$$
-\boxed{\theta=30^\circ,\quad M=0.03,\quad X=55}
-$$
-
-produce a close reconstruction of the supplied 1,500-point dataset, with a mean L1 point-to-curve error of approximately
-
-$$
-\boxed{1.745\times10^{-4}}.
-$$
 
 
