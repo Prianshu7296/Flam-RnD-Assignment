@@ -1,6 +1,11 @@
-theta_rad=0.52359830
-theta_deg=29.999973
-M=0.03000000
-X=54.99999821
-mean_L1=0.01004143
-max_L1=0.03160332
+theta_rad=0.5235983032
+theta_deg=29.99997293
+M=0.0299999969
+X=54.9999982128
+least_squares_cost=9.1149896793e-09
+ls_runs=60
+ls_runs_with_cost_below_1e-4=60
+de_theta_deg=29.99997293
+de_M=0.0299999969
+de_X=54.9999982128
+de_objective=1.82299793605e-08
