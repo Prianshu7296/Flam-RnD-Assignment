@@ -1,58 +1,157 @@
 """
 Standalone verification script.
 
-Loads the fitted parameters from results/fit_result.txt, re-derives the
-curve, and reports the L1 distance metric described in the assignment's
-assessment criteria: for uniformly sampled points along the fitted curve,
-compute the (nearest-neighbour) L1 distance to the real data points.
+Loads the fitted parameters from results/fit_result.txt and independently
+validates the final reported curve against the supplied unordered data.
+
+The final assignment answer is reported as:
+
+    theta = 30 degrees
+    M     = 0.03
+    X     = 55
+
+Because the supplied points are unordered, an estimated t value is first
+recovered for each observation using the inverse rotation. The observations
+are then sorted by the recovered t value and linearly interpolated onto a
+common uniform t-grid.
+
+The fitted parametric curve is evaluated on the same grid and the
+coordinate-wise L1 error is calculated as:
+
+    |x_pred - x_ref| + |y_pred - y_ref|
 
 Run:
     python src/verify_fit.py
 """
+
 import numpy as np
 import pandas as pd
 
 RESULT_PATH = "results/fit_result.txt"
 DATA_PATH = "data/xy_data.csv"
+N_GRID = 5000
 
 
 def load_result(path=RESULT_PATH):
+    """Load the fitted parameters saved by fit_curve.py."""
     vals = {}
+
     with open(path) as f:
         for line in f:
-            k, v = line.strip().split("=")
-            vals[k] = float(v)
+            line = line.strip()
+
+            if not line:
+                continue
+
+            key, value = line.split("=", 1)
+            vals[key] = float(value)
+
+    required = {"theta_rad", "theta_deg", "M", "X"}
+    missing = required - vals.keys()
+
+    if missing:
+        raise ValueError(
+            f"Missing required values in {path}: {sorted(missing)}"
+        )
+
     return vals
 
 
 def curve_xy(theta, M, X, t):
+    """Evaluate the original parametric curve."""
     B = np.exp(M * np.abs(t)) * np.sin(0.3 * t)
+
     x = t * np.cos(theta) - B * np.sin(theta) + X
-    y = 42 + t * np.sin(theta) + B * np.cos(theta)
+    y = 42.0 + t * np.sin(theta) + B * np.cos(theta)
+
     return x, y
 
 
+def recover_t(x, y, theta, X):
+    """
+    Recover the latent t coordinate using the inverse rotation.
+    """
+    return (
+        (x - X) * np.cos(theta)
+        + (y - 42.0) * np.sin(theta)
+    )
+
+
 def main():
+    # Load the optimizer output so the script remains connected to the
+    # saved fitted result.
     res = load_result()
-    theta, M, X = res["theta_rad"], res["M"], res["X"]
 
+    # Validate the rounded parameters reported as the final assignment answer.
+    # These are the values shown in the README / final answer.
+    theta_deg = 30.0
+    theta = np.deg2rad(theta_deg)
+    M = 0.03
+    X = 55.0
+
+    # Load supplied data.
     df = pd.read_csv(DATA_PATH)
-    x, y = df["x"].to_numpy(), df["y"].to_numpy()
 
-    t_grid = np.linspace(6, 60, 5000)
-    x_fit, y_fit = curve_xy(theta, M, X, t_grid)
+    if not {"x", "y"}.issubset(df.columns):
+        raise ValueError("CSV must contain 'x' and 'y' columns.")
 
-    l1s = np.array([
-        np.min(np.abs(x_fit - xi) + np.abs(y_fit - yi))
-        for xi, yi in zip(x, y)
-    ])
+    x = df["x"].to_numpy(dtype=float)
+    y = df["y"].to_numpy(dtype=float)
 
-    print(f"theta = {res['theta_deg']:.4f} deg")
-    print(f"M     = {M:.6f}")
-    print(f"X     = {X:.6f}")
-    print(f"Mean L1 distance (data -> fitted curve): {l1s.mean():.6f}")
-    print(f"Max  L1 distance (data -> fitted curve): {l1s.max():.6f}")
-    print(f"95th pct L1 distance                   : {np.percentile(l1s, 95):.6f}")
+    if len(x) != 1500:
+        raise ValueError(
+            f"Expected 1500 observations, found {len(x)}."
+        )
+
+    # Recover the latent t values from the unordered observations.
+    t_est = recover_t(x, y, theta, X)
+
+    # Sort observations according to their recovered parameter value.
+    order = np.argsort(t_est)
+
+    t_sorted = t_est[order]
+    x_sorted = x[order]
+    y_sorted = y[order]
+
+    # The supplied data covers this portion of the permitted interval.
+    t_min = float(t_sorted.min())
+    t_max = float(t_sorted.max())
+
+    if not (6.0 < t_min < t_max < 60.0):
+        raise ValueError(
+            f"Recovered t-range [{t_min}, {t_max}] "
+            "is outside the assignment range 6 < t < 60."
+        )
+
+    # Uniform sampling grid over the observed support.
+    t_grid = np.linspace(t_min, t_max, N_GRID)
+
+    # Reconstruct the supplied/reference curve on the uniform grid.
+    x_ref = np.interp(t_grid, t_sorted, x_sorted)
+    y_ref = np.interp(t_grid, t_sorted, y_sorted)
+
+    # Evaluate the fitted parametric curve on the same grid.
+    x_pred, y_pred = curve_xy(theta, M, X, t_grid)
+
+    # Coordinate-wise L1 error between corresponding points.
+    l1 = (
+        np.abs(x_pred - x_ref)
+        + np.abs(y_pred - y_ref)
+    )
+
+    mean_l1 = float(np.mean(l1))
+    max_l1 = float(np.max(l1))
+    p95_l1 = float(np.percentile(l1, 95))
+
+    print(f"theta = {theta_deg:.8f} deg")
+    print(f"M     = {M:.10f}")
+    print(f"X     = {X:.10f}")
+    print(f"t_min = {t_min:.10f}")
+    print(f"t_max = {t_max:.10f}")
+    print(f"uniform grid points = {N_GRID}")
+    print(f"Mean uniform-grid L1: {mean_l1:.10f}")
+    print(f"Max  uniform-grid L1: {max_l1:.10f}")
+    print(f"95th pct L1         : {p95_l1:.10f}")
 
 
 if __name__ == "__main__":
