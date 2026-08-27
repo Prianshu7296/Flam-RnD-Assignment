@@ -4,7 +4,8 @@ Standalone verification script.
 Loads the fitted parameters from results/fit_result.txt and independently
 validates the final reported curve against the supplied unordered data.
 
-The final assignment answer is reported as:
+The final assignment answer is reported to four significant decimal places
+for theta/M/X as:
 
     theta = 30 degrees
     M     = 0.03
@@ -68,9 +69,7 @@ def curve_xy(theta, M, X, t):
 
 
 def recover_t(x, y, theta, X):
-    """
-    Recover the latent t coordinate using the inverse rotation.
-    """
+    """Recover the latent t coordinate using the inverse rotation."""
     return (
         (x - X) * np.cos(theta)
         + (y - 42.0) * np.sin(theta)
@@ -78,16 +77,16 @@ def recover_t(x, y, theta, X):
 
 
 def main():
-    # Load the optimizer output so the script remains connected to the
-    # saved fitted result.
+    # Load the saved optimizer result.
     res = load_result()
 
-    # Validate the rounded parameters reported as the final assignment answer.
-    # These are the values shown in the README / final answer.
-    theta_deg = 30.0
+    # Validate the rounded parameters used as the final assignment answer.
+    # Rounding here makes the verification consistent with the parameters
+    # reported in the README and Desmos equation.
+    theta_deg = round(res["theta_deg"])
     theta = np.deg2rad(theta_deg)
-    M = 0.03
-    X = 55.0
+    M = round(res["M"], 2)
+    X = round(res["X"])
 
     # Load supplied data.
     df = pd.read_csv(DATA_PATH)
@@ -103,17 +102,17 @@ def main():
             f"Expected 1500 observations, found {len(x)}."
         )
 
-    # Recover the latent t values from the unordered observations.
+    # Recover latent t values from the unordered observations.
     t_est = recover_t(x, y, theta, X)
 
-    # Sort observations according to their recovered parameter value.
+    # Sort observations according to recovered t.
     order = np.argsort(t_est)
 
     t_sorted = t_est[order]
     x_sorted = x[order]
     y_sorted = y[order]
 
-    # The supplied data covers this portion of the permitted interval.
+    # Use the observed support inside the assignment range.
     t_min = float(t_sorted.min())
     t_max = float(t_sorted.max())
 
@@ -130,7 +129,7 @@ def main():
     x_ref = np.interp(t_grid, t_sorted, x_sorted)
     y_ref = np.interp(t_grid, t_sorted, y_sorted)
 
-    # Evaluate the fitted parametric curve on the same grid.
+    # Evaluate the final fitted curve on the same grid.
     x_pred, y_pred = curve_xy(theta, M, X, t_grid)
 
     # Coordinate-wise L1 error between corresponding points.
