@@ -104,7 +104,7 @@ def main():
     print(f"X     = {X:.6f}")
     print(f"final cost (sum sq resid) = {best.cost:.6f}")
 
-    t_grid = np.linspace(6, 60, 2000)
+    t_grid = np.linspace(6, 60, 5000)
     ct, st = np.cos(theta), np.sin(theta)
     B = np.exp(M * np.abs(t_grid)) * np.sin(0.3 * t_grid)
     x_fit = t_grid * ct - B * st + X
