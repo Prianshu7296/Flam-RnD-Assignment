@@ -236,19 +236,19 @@ The fitting objective and the final curve validation are treated separately.
 
 The optimizer minimizes the transformed-coordinate model residual because this gives a compact three-variable optimization problem.
 
-After fitting, the recovered parameters are inserted back into the original parametric equations and the reconstructed curve is evaluated independently.
+After fitting, the final reported parameters are inserted back into the original parametric equations and the reconstructed curve is evaluated independently.
 
-Because the supplied points are unordered, the observed points are first associated with estimated `t` values using the inverse rotation. The observations are then ordered by the recovered `t` values and interpolated onto a common uniform `t` grid.
+Because the supplied points are unordered, an estimated `t` value is recovered for each observed point using the inverse rotation. The observations are then sorted by the recovered `t` values and linearly interpolated onto a common uniform `t` grid over the observed support.
 
-The fitted parametric curve is evaluated on the same uniform grid over the allowed range:
+The fitted parametric curve is evaluated on the same uniform grid using 5,000 points. The observed data cover:
 
 ```text
-6 < t < 60
+6.0494 < t < 59.9952
 ```
 
-using 5,000 evaluation points.
+which lies within the assignment's permitted interval `6 < t < 60`.
 
-The coordinate-wise L1 error at each grid point is:
+The coordinate-wise L1 error at each corresponding grid point is:
 
 ```text
 |x_pred - x_ref| + |y_pred - y_ref|
@@ -256,15 +256,15 @@ The coordinate-wise L1 error at each grid point is:
 
 The mean, maximum, and 95th-percentile values of this error are then reported.
 
-This validation is intended to measure how closely the reconstructed curve matches the supplied point set on a common uniform parameter grid.
+This validation measures how closely the reconstructed parametric curve matches the supplied point set on a common uniform parameter grid.
 
-A separate point-to-curve L1 calculation is also used as an auxiliary geometric reconstruction diagnostic. It is not the primary uniform-grid validation metric.
+A separate point-to-curve L1 calculation is retained as an auxiliary geometric reconstruction diagnostic. It is not the primary uniform-grid validation metric.
 
 ---
 
 # 6. Validation Results
 
-Using the supplied 1,500-point dataset and the recovered parameters:
+Using the final reported parameters:
 
 ```text
 θ = 30°
@@ -272,15 +272,15 @@ M = 0.03
 X = 55
 ```
 
-the uniform-grid validation gives:
+and the supplied 1,500-point dataset, the uniform-grid validation gives:
 
-| Metric                  |           Result |
-| ----------------------- | ---------------: |
-| Mean uniform-grid L1    | **0.0001744963** |
+| Metric | Result |
+| ------ | -----: |
+| Mean uniform-grid L1 | **0.0001744963** |
 | Maximum uniform-grid L1 | **0.0090396116** |
-| 95th percentile L1      | **0.0005913611** |
+| 95th percentile L1 | **0.0005913611** |
 
-The recovered parameter values are therefore consistent with a very close reconstruction of the supplied curve.
+These values are obtained by comparing corresponding points on the common uniform `t` grid.
 
 The full validation results are stored in:
 
@@ -306,7 +306,7 @@ and asks whether:
 B_est ≈ exp(M*|t_est|)*sin(0.3*t_est)
 ```
 
-The final validation instead evaluates the reconstructed curve independently in the original `(x, y)` space on a common uniform `t` grid.
+The final validation instead evaluates the reconstructed parametric curve in the original `(x, y)` space on a common uniform `t` grid and compares corresponding points using coordinate-wise L1 distance.
 
 Therefore, the optimizer's least-squares cost and the final L1 validation value are not expected to be numerically identical.
 
@@ -321,8 +321,6 @@ independent uniform-grid validation
         ↓
 curve reconstruction quality
 ```
-
----
 
 # 8. Visual Results
 
@@ -395,7 +393,7 @@ The fitting script writes the recovered parameters to:
 results/fit_result.txt
 ```
 
-The validation script reads those saved values and performs the independent curve validation.
+The validation script reads the saved fit result and independently evaluates the final reported parameters on a uniform t-grid.
 
 The validation results are stored in:
 
@@ -528,7 +526,6 @@ The final reconstructed curve is then evaluated independently using a uniform `t
 
 
 The fitted parameters reproduce the supplied curve closely, while the separate geometric validation provides an independent measure of the final reconstruction quality.
-
 
 
 
