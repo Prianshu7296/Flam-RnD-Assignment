@@ -60,6 +60,12 @@ Copy-paste ready:
 \left(t*\cos(0.523599)-e^{0.03\left|t\right|}\cdot\sin(0.3t)\sin(0.523599)+55,42+t*\sin(0.523599)+e^{0.03\left|t\right|}\cdot\sin(0.3t)\cos(0.523599)\right)
 ```
 
+with the domain:
+
+```text
+6 < t < 60
+```
+
 ---
 
 # 1. Main Insight
@@ -202,7 +208,7 @@ A single nonlinear optimization run can depend on its initial point.
 
 To test this, 60 independent starting points are sampled uniformly inside the allowed parameter ranges.
 
-All 60 runs converged successfully to the same solution basin.
+All 60 runs converged to the same solution basin.
 
 Best recovered values:
 
@@ -220,66 +226,75 @@ The final least-squares cost was approximately:
 
 Across all 60 runs, the optimization converged to the same numerical solution to the displayed precision.
 
-This is useful as a practical robustness check: the result is not dependent on a single lucky initialization.
+This is a practical robustness check that the result is not dependent on a single initialization.
 
 ---
 
 # 5. Validation
 
-The fitting objective and final curve validation are treated separately.
+The fitting objective and the final curve validation are treated separately.
 
-The optimizer minimizes the transformed-coordinate model residual because that gives a compact three-variable optimization problem.
+The optimizer minimizes the transformed-coordinate model residual because this gives a compact three-variable optimization problem.
 
 After fitting, the recovered parameters are inserted back into the original parametric equations and the reconstructed curve is evaluated independently.
 
-The validation script samples the fitted curve uniformly over:
+Because the supplied points are unordered, the observed points are first associated with estimated `t` values using the inverse rotation. The observations are then ordered by the recovered `t` values and interpolated onto a common uniform `t` grid.
+
+The fitted parametric curve is evaluated on the same uniform grid over the allowed range:
 
 ```text
-6 <= t <= 60
+6 < t < 60
 ```
 
-using 5,000 points.
+using 5,000 evaluation points.
 
-For every observed point `(x_i, y_i)`, it computes the minimum L1 distance to the sampled fitted curve:
+The coordinate-wise L1 error at each grid point is:
 
 ```text
-d_i =
-min(
-    |x(t) - x_i| + |y(t) - y_i|
-)
+|x_pred - x_ref| + |y_pred - y_ref|
 ```
 
-The final statistics are calculated over all 1,500 supplied points.
+The mean, maximum, and 95th-percentile values of this error are then reported.
 
-This provides a dense numerical approximation of the point-to-curve L1 reconstruction error.
+This validation is intended to measure how closely the reconstructed curve matches the supplied point set on a common uniform parameter grid.
+
+A separate point-to-curve L1 calculation is also used as an auxiliary geometric reconstruction diagnostic. It is not the primary uniform-grid validation metric.
 
 ---
 
 # 6. Validation Results
 
-Measured directly from the supplied 1,500-point dataset using the repository's validation procedure:
-
-| Metric              |       Result |
-| ------------------- | -----------: |
-| Mean L1 distance    | **0.004074** |
-| 95th percentile L1  | **0.008108** |
-| Maximum L1 distance | **0.012357** |
-
-The mean L1 error is approximately:
+Using the supplied 1,500-point dataset and the recovered parameters:
 
 ```text
-4.07 × 10^-3
+θ = 30°
+M = 0.03
+X = 55
 ```
 
-The validation is performed independently of the optimizer's residual calculation by reconstructing the curve from the saved fitted parameters.
+the uniform-grid validation gives:
+
+| Metric                  |           Result |
+| ----------------------- | ---------------: |
+| Mean uniform-grid L1    | **0.0001744963** |
+| Maximum uniform-grid L1 | **0.0090396116** |
+| 95th percentile L1      | **0.0005913611** |
+
+The recovered parameter values are therefore consistent with a very close reconstruction of the supplied curve.
+
+The full validation results are stored in:
+
+```text
+results/validation.txt
+```
 
 ---
 
-# 7. Why the Validation Error Is Larger Than the Optimizer Residual
+# 7. Why the Validation Error Differs From the Optimizer Residual
 
-The optimization residual and the final L1 validation measure different quantities.
+The optimization residual and the final validation metric measure different quantities.
 
-The optimizer operates after transforming every point into the curve's intrinsic coordinate system:
+The optimizer operates after transforming each point into the curve's intrinsic coordinate system:
 
 ```text
 (x, y) → (t_est, B_est)
@@ -291,18 +306,18 @@ and asks whether:
 B_est ≈ exp(M*|t_est|)*sin(0.3*t_est)
 ```
 
-The final validation instead works in the original `(x, y)` space and asks how close each observed point is to the discretely sampled reconstructed curve under L1 distance.
+The final validation instead evaluates the reconstructed curve independently in the original `(x, y)` space on a common uniform `t` grid.
 
-Therefore, the two numbers are not expected to be identical.
+Therefore, the optimizer's least-squares cost and the final L1 validation value are not expected to be numerically identical.
 
-This distinction is intentional:
+The two stages serve different purposes:
 
 ```text
 optimization objective
         ↓
 parameter recovery
 
-independent geometric validation
+independent uniform-grid validation
         ↓
 curve reconstruction quality
 ```
@@ -323,7 +338,7 @@ The visual overlay provides a qualitative check that the recovered parameters re
 
 ## L1 Residual
 
-The residual plot shows how the reconstruction error varies across the curve.
+The residual plot shows how the uniform-grid reconstruction error varies across the curve.
 
 ![L1 residual versus t](results/residual_vs_t.png)
 
@@ -380,7 +395,13 @@ The fitting script writes the recovered parameters to:
 results/fit_result.txt
 ```
 
-and the validation script reads those saved values for its reconstruction check.
+The validation script reads those saved values and performs the independent curve validation.
+
+The validation results are stored in:
+
+```text
+results/validation.txt
+```
 
 ---
 
@@ -497,7 +518,14 @@ By analytically undoing that rigid transformation, the unordered point-cloud pro
 θ, M, X
 ```
 
-The solution is then tested from 60 independent initializations, with all runs converging to the same parameter basin.
+The solution is tested from 60 independent initializations, with all runs converging to the same parameter basin.
+
+The final reconstructed curve is then evaluated independently using a uniform `t` grid, giving a mean uniform-grid L1 error of:
+
+```text
+1.744963 × 10^-4
+```
+
 
 The fitted parameters reproduce the supplied curve closely, while the separate geometric validation provides an independent measure of the final reconstruction quality.
 
